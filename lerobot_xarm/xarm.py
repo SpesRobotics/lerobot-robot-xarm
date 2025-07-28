@@ -1,19 +1,3 @@
-# !/usr/bin/env python
-
-# Copyright 2025 The HuggingFace Inc. team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import logging
 import time
 import os
@@ -30,7 +14,8 @@ from lerobot.cameras import make_cameras_from_configs
 from lerobot.errors import DeviceNotConnectedError, DeviceAlreadyConnectedError
 from lerobot.robots.robot import Robot
 
-from .config_xarm import XarmConfig
+from . import XarmConfig
+
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +171,11 @@ class Xarm(Robot):
             ]
 
             delta_rotation = None
-            if "delta_roll" in action and "delta_pitch" in action and "delta_yaw" in action:
+            if (
+                "delta_roll" in action
+                and "delta_pitch" in action
+                and "delta_yaw" in action
+            ):
                 roll = action["delta_roll"]
                 pitch = action["delta_pitch"]
                 yaw = action["delta_yaw"]
@@ -273,7 +262,9 @@ class Xarm(Robot):
                         # Limit velocity
                         velocity = np.clip(velocity, -max_velocity, max_velocity)
                         # Limit acceleration
-                        acceleration = np.clip(acceleration, -max_acceleration, max_acceleration)
+                        acceleration = np.clip(
+                            acceleration, -max_acceleration, max_acceleration
+                        )
 
                         # Integrate back to position
                         joint_positions[i] = prev_pos + velocity * dt

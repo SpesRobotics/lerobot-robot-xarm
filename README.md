@@ -8,7 +8,7 @@ Brings a simple integration with [LeRobot](https://github.com/huggingface/lerobo
 pip install lerobot-xarm
 
 python -m lerobot.teleoperate \
-    --robot.type=lerobot_xarm.xarm.Xarm \
+    --robot.type=lerobot_xarm \
     --robot.id=black \
     --teleop.type=keyboard_ee \
     --fps=60
