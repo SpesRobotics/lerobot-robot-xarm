@@ -8,7 +8,10 @@ from lerobot.robots.config import RobotConfig
 @dataclass
 class XarmConfig(RobotConfig):
     ip: str = "192.168.1.184"
-    save_effort: bool = False
-    limit_joints: bool = False
+    use_effort: bool = False
+    use_velocity: bool = True
+    use_acceleration: bool = True
+    home_translation: list[float] = field(default_factory=lambda: [0.2, 0.0, 0.05])
+    home_orientation_euler: list[float] = field(default_factory=lambda: [3.14, 0.0, 0.0])
     cameras: dict[str, CameraConfig] = field(default_factory=dict)
     device_class: str = 'lerobot_xarm.xarm.Xarm'

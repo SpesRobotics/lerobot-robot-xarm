@@ -2,7 +2,6 @@ import logging
 import time
 import os
 import copy
-import math
 from typing import Any
 
 import numpy as np
@@ -38,7 +37,6 @@ class Lite6Gripper:
         self._arm.stop_lite6_gripper()
 
     def set_gripper_state(self, gripper_state: float) -> None:
-        """Set gripper state and handle opening/closing logic."""
         self._gripper_state = gripper_state
 
         if self._gripper_state is not None:
@@ -66,11 +64,9 @@ class Lite6Gripper:
         self._prev_gripper_state = self._gripper_state
 
     def get_gripper_state(self) -> float:
-        """Get current gripper state."""
         return self._gripper_state
 
     def reset_gripper(self) -> None:
-        """Reset gripper state."""
         self._prev_gripper_state = None
         self._gripper_state = 0.0
         self._gripper_open_time = 0.0
@@ -95,16 +91,9 @@ class Xarm(Robot):
             os.path.join(this_dir, "lite6.urdf"), ee_link="link_tool"
         )
         self._initial_pose = None
-        self._prev_action = None
-        self._prev_prev_action = None
-        self._homing = False
-        self._homing_pose_from_intial_compensation = np.eye(4)
+        self._prev_observation = None
 
     def connect(self, calibrate: bool = True) -> None:
-        """
-        We assume that at connection time, arm is in a rest position,
-        and torque can be safely disabled to run calibration.
-        """
         if self.is_connected:
             raise DeviceAlreadyConnectedError(f"{self} already connected")
 
@@ -122,7 +111,7 @@ class Xarm(Robot):
         code, joint_positions = self._arm.get_servo_angle()
         if code != 0:
             raise DeviceNotConnectedError(f"Failed to get joint angles from {self}")
-        for i in range(1, 7):  # joints 1-6
+        for i in range(1, 7):
             joint_name = f"joint{i}"
             self._jacobi.set_joint_position(joint_name, joint_positions[i - 1])
 
@@ -135,27 +124,15 @@ class Xarm(Robot):
 
     @property
     def _motors_ft(self) -> dict[str, type]:
-        """Return mapping of motor feature names to their Python types (float)."""
         motors = {f"joint{i}.pos": float for i in range(1, 7)}
         motors["gripper.pos"] = float
         return motors
 
     @property
     def action_features(self) -> dict[str, type]:
-        """Joint commands expected by the robot (all scalar floats)."""
         return self._motors_ft
 
     def send_action(self, action: dict[str, Any]) -> dict[str, Any]:
-        """
-        Transform action from end-effector space to joint space and send to motors.
-
-        Args:
-            action: Dictionary with keys 'pose', 'gripper', 'joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6'.
-
-        Returns:
-            The joint-space action that was sent to the motors
-        """
-
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
@@ -190,50 +167,28 @@ class Xarm(Robot):
             action["pose"][:3, 3] = pose[:3, 3] + delta_pose[:3, 3]
 
         if "pose_from_initial" in action:
-            if self._homing:
-                self._homing = False
-                self._homing_pose_from_intial_compensation = action["pose_from_initial"]
-                print(
-                    "Homming pose compensation set to:",
-                    self._homing_pose_from_intial_compensation,
-                )
-
-            delta_pose = action["pose_from_initial"] @ np.linalg.inv(
-                self._homing_pose_from_intial_compensation
-            )
+            delta_pose = action["pose_from_initial"]
             action["pose"] = np.eye(4)
             action["pose"][:3, :3] = delta_pose[:3, :3] @ self._initial_pose[:3, :3]
             action["pose"][:3, 3] = self._initial_pose[:3, 3] + delta_pose[:3, 3]
 
+        if "home" in action:
+            home_pose = t3d.affines.compose(
+                self.config.home_translation,
+                t3d.euler.euler2mat(*self.config.home_orientation_euler),
+                [1.0, 1.0, 1.0],
+            )
+            action["pose"] = home_pose
+            self._initial_pose = self._jacobi.get_ee_pose()
+
         if "pose" in action:
             pose = action["pose"]
             self._jacobi.servo_to_pose(pose)
+
             # Get joint positions from Jacobi
             for i in range(1, 7):
                 joint_pos = self._jacobi.get_joint_position(f"joint{i}")
                 action[f"joint{i}.pos"] = joint_pos
-
-        if "home" in action:
-            if not self._homing:
-                self._homing = True
-
-            joint_targets = [
-                0,
-                math.radians(10),
-                math.radians(32),
-                0,
-                math.radians(22),
-                0,
-            ]
-            for i in range(1, 7):
-                joint_name = f"joint{i}"
-                joint_pos = self._jacobi.get_joint_position(joint_name)
-                error = joint_targets[i - 1] - joint_pos
-                error = np.clip(error, -0.1, 0.1)
-                target_pos = joint_pos + error * 0.07
-                self._jacobi.set_joint_position(joint_name, target_pos)
-                action[f"joint{i}.pos"] = target_pos
-            self._initial_pose = self._jacobi.get_ee_pose()
 
         # Execute joint positions
         if "joint1.pos" in action:
@@ -242,35 +197,6 @@ class Xarm(Robot):
                 joint_pos = action[f"joint{i}.pos"]
                 joint_positions.append(joint_pos)
 
-            if self.config.limit_joints:
-                if self._prev_action is not None:
-                    dt = 1.0 / 60.0  # Assuming 60Hz control frequency
-                    max_velocity = 0.2  # Max joint velocity (rad/s)
-                    max_acceleration = 0.4  # Max joint acceleration (rad/s^2)
-                    for i in range(6):
-                        prev_pos = self._prev_action[i]
-                        prev_prev_pos = (
-                            self._prev_prev_action[i]
-                            if self._prev_prev_action is not None
-                            else prev_pos
-                        )
-                        # Compute velocity and acceleration
-                        velocity = (joint_positions[i] - prev_pos) / dt
-                        prev_velocity = (prev_pos - prev_prev_pos) / dt
-                        acceleration = (velocity - prev_velocity) / dt
-
-                        # Limit velocity
-                        velocity = np.clip(velocity, -max_velocity, max_velocity)
-                        # Limit acceleration
-                        acceleration = np.clip(
-                            acceleration, -max_acceleration, max_acceleration
-                        )
-
-                        # Integrate back to position
-                        joint_positions[i] = prev_pos + velocity * dt
-
-                self._prev_prev_action = self._prev_action
-                self._prev_action = joint_positions.copy()  # Store the current action
             self._arm.set_servo_angle_j(joint_positions)
         else:
             for i in range(1, 7):
@@ -282,8 +208,6 @@ class Xarm(Robot):
             self._gripper.set_gripper_state(gripper_pos)
             action["gripper.pos"] = self._gripper.get_gripper_state()
 
-        # Return the joint-space command dictionary so that the recorder can
-        # store every value in the dataset.
         return action
 
     def get_observation(self) -> dict[str, Any]:
@@ -294,15 +218,34 @@ class Xarm(Robot):
         start = time.perf_counter()
 
         # Read joint positions from xarm
-        code, (joint_angles, joint_velocities, joint_efforts) = (
-            self._arm.get_joint_states()
-        )
+        _, (joint_angles, _, joint_efforts) = self._arm.get_joint_states()
 
         obs_dict = {}
         for i, angle in enumerate(joint_angles[:6]):  # First 6 angles are joints
             obs_dict[f"joint{i+1}.pos"] = angle
             obs_dict[f"joint{i+1}.effort"] = joint_efforts[i]
         obs_dict["gripper.pos"] = self._gripper.get_gripper_state()
+
+        # calculate joint velocities
+        for i in range(1, 7):
+            joint_name = f"joint{i}"
+            if self._prev_observation is not None:
+                prev_angle = self._prev_observation[f"{joint_name}.pos"]
+                curr_angle = obs_dict[f"{joint_name}.pos"]
+                obs_dict[f"{joint_name}.vel"] = (
+                    curr_angle - prev_angle
+                ) * 60.0  # Assuming 60Hz control frequency
+            else:
+                obs_dict[f"{joint_name}.vel"] = 0.0
+
+        # calculate joint accelerations
+        for i in range(1, 7):
+            joint_name = f"joint{i}"
+            if self._prev_observation is not None:
+                prev_vel = self._prev_observation[f"{joint_name}.vel"]
+                obs_dict[f"{joint_name}.acc"] = obs_dict[f"{joint_name}.vel"] - prev_vel
+            else:
+                obs_dict[f"{joint_name}.acc"] = 0.0
 
         # Capture images from cameras
         for cam_key, cam in self.cameras.items():
@@ -311,6 +254,7 @@ class Xarm(Robot):
             dt_ms = (time.perf_counter() - start) * 1e3
             logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
 
+        self._prev_observation = obs_dict
         return obs_dict
 
     def reset(self):
@@ -318,7 +262,6 @@ class Xarm(Robot):
             self._gripper.reset_gripper()
 
     def disconnect(self) -> None:
-        """Disconnect from the robot and cameras."""
         if not self.is_connected:
             return
 
@@ -337,35 +280,26 @@ class Xarm(Robot):
         logger.info(f"{self} disconnected.")
 
     def calibrate(self) -> None:
-        """Calibrate the robot (optional for xarm)."""
-        if not self.is_connected:
-            raise DeviceNotConnectedError(f"{self} is not connected.")
-
-        # XArm doesn't typically require calibration
-        # This could be used for homing or setting reference positions
-        logger.info(f"{self} calibration completed.")
+        pass
 
     def configure(self) -> None:
-        """Configure robot settings."""
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
 
         self._initial_pose = self._jacobi.get_ee_pose()
-        logger.info(f"{self} configured.")
+        xyz = self._initial_pose[:3, 3]
+        rpy = t3d.euler.mat2euler(self._initial_pose[:3, :3])
+        print(f"Initial pose: xyz={xyz}, rpy={rpy}")
 
     def is_calibrated(self) -> bool:
-        """Check if robot is calibrated."""
-        # XArm is considered always calibrated when connected
         return self.is_connected
 
     @property
     def is_connected(self) -> bool:
-        """Check if robot is connected."""
         return self._is_connected
 
     @is_connected.setter
     def is_connected(self, value: bool) -> None:
-        """Set connection status."""
         self._is_connected = value
 
     @property
@@ -377,11 +311,16 @@ class Xarm(Robot):
 
     @property
     def observation_features(self) -> dict[str, Any]:
-        """Joint positions and camera image shapes returned by the robot."""
         features = {**self._motors_ft, **self._cameras_ft}
-        if self.config.save_effort:
+        if self.config.use_effort:
             for i in range(1, 7):
                 features[f"joint{i}.effort"] = float
+        if self.config.use_velocity:
+            for i in range(1, 7):
+                features[f"joint{i}.vel"] = float
+        if self.config.use_acceleration:
+            for i in range(1, 7):
+                features[f"joint{i}.acc"] = float
         return features
 
     @property
