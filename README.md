@@ -18,7 +18,7 @@ lerobot-teleoperate \
 
 Install the package in editable mode:
 ```bash
-git clone https://github.com/SpesRobotics/lerobot-xarm.git
+git clone https://github.com/SpesRobotics/lerobot-robot-xarm.git
 cd lerobot-xarm
 pip install -e .
 ```
