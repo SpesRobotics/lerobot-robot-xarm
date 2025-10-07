@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="lerobot_xarm",
+    name="lerobot_robot_xarm",
     version="0.0.1",
     description="LeRobot XArm integration",
     author="Spes Robotics",

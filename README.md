@@ -5,10 +5,10 @@ Brings a simple integration with [LeRobot](https://github.com/huggingface/lerobo
 ## Getting Started
 
 ```bash
-pip install lerobot-xarm
+pip install lerobot-robot-xarm
 
-python -m lerobot.teleoperate \
-    --robot.type=lerobot_xarm \
+lerobot-teleoperate \
+    --robot.type=lerobot_robot_xarm \
     --robot.id=black \
     --teleop.type=keyboard_ee \
     --fps=60

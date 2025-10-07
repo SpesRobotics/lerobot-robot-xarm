@@ -10,10 +10,10 @@ from xarm.wrapper import XArmAPI
 from teleop.utils.jacobi_robot import JacobiRobot
 
 from lerobot.cameras import make_cameras_from_configs
-from lerobot.errors import DeviceNotConnectedError, DeviceAlreadyConnectedError
+from lerobot.utils.errors import DeviceNotConnectedError, DeviceAlreadyConnectedError
 from lerobot.robots.robot import Robot
 
-from . import XarmConfig
+from .config_xarm import XarmConfig
 
 
 logger = logging.getLogger(__name__)
