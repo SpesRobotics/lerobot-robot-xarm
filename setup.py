@@ -14,7 +14,7 @@ setup(
         "teleop",
         "lerobot",
     ],
-    python_requires=">=3.7",
+    python_requires=">=3.10",
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: Apache License",
