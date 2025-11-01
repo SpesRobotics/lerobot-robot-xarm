@@ -1,4 +1,4 @@
-from anyio import Path
+from pathlib import Path
 from setuptools import setup, find_packages
 
 this_directory = Path(__file__).parent
