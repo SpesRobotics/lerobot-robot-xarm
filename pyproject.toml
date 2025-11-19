@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lerobot_robot_xarm"
+version = "0.0.3"
+description = "LeRobot XArm integration"
+readme = "README.md"
+authors = [
+  { name = "Spes Robotics", email = "contact@spes.ai" },
+]
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "xarm-python-sdk",
+  "numpy",
+  "transforms3d",
+  "teleop",
+  "lerobot>=0.4",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["lerobot_robot_xarm*"]
+exclude = ["*.egg-info"]
+
+[tool.setuptools.package-data]
+"lerobot_robot_xarm" = ["*.urdf"]
